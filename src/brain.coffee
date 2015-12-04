@@ -748,11 +748,18 @@ class Brain
     reply = reply.replace(/\{\/__call__\}/g, "</call>")
     match = reply.match(/<call>(.+?)<\/call>/i)
     giveup = 0
-    while match
+    return this.processCalls(giveup, match, reply, scope)
+
+  processCalls: (giveup, match, reply, scope) ->
+      # if no more matches, we're done
+      unless match
+        return reply
+
+      # if we're still going after 50, assume infinite loop
       giveup++
       if giveup >= 50
         @warn "Infinite loop looking for call tag!"
-        break
+        return reply
 
       text  = utils.strip(match[1])
       parts = text.split(/\s+/)
@@ -772,10 +779,20 @@ class Brain
       else
         output = "[ERR: Object Not Found]"
 
+      if output.then
+        # its a promise return, so we need to go down the async path
+        return this.asyncCallReply(output, reply, match, giveup)
+      else
+        reply = reply.replace(new RegExp("<call>" + utils.quotemeta(match[1]) + "</call>", "i"), output)
+        match = reply.match(/<call>(.+?)<\/call>/i)
+        return this.processCalls(giveup, match, reply)
+
+
+  asyncCallReply: (outputP, reply, match, giveup, scope) ->
+    return outputP.then (output) =>
       reply = reply.replace(new RegExp("<call>" + utils.quotemeta(match[1]) + "</call>", "i"), output)
       match = reply.match(/<call>(.+?)<\/call>/i)
-
-    return reply
+      return this.processCalls(giveup, match, reply, scope)
 
   ##
   # string substitute (string msg, string type)
